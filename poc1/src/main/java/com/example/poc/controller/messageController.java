@@ -15,19 +15,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import com.example.poc.dto.MessageSearchRequest;
 import com.example.poc.dto.ResponseDto;
+import com.example.poc.entity.Message17;
 import com.example.poc.repository.Message17Repository;
 import com.example.poc.repository.Message17Repository.StoredMessageData;
 import com.example.poc.service.MessageService;
 
-import java.nio.ByteBuffer;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 @RestController
 public class messageController {
     @Autowired
@@ -140,6 +146,32 @@ public class messageController {
             return "File upload failed: " + e.getMessage();
         }
     }
+      @PostMapping("/cache/messages")
+    public ResponseEntity<Map<String, Object>> getMessagesFromCache(@RequestBody MessageSearchRequest request) {
+        try {
+            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            SimpleDateFormat cacheFormat = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
+            
+            Date fromDate = inputFormat.parse(request.getFromDate());
+            Date toDate = inputFormat.parse(request.getToDate());
+            
+            logger.info("Searching messages between {} and {}", request.getFromDate(), request.getToDate());
+            List<Message17> result = csvService.getMessagesByDateRange(fromDate, toDate);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("messages", result);
+            response.put("totalCount", result.size());
+            response.put("cacheSize", csvService.getCacheSize());
+            
+            return ResponseEntity.ok(response);
+        } catch (ParseException e) {
+            logger.error("Date parsing error", e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+
 
     @PostMapping("/messages")
     public List<StoredMessageData> getMessagesByDateRange(@RequestBody ResponseDto request) {
@@ -195,4 +227,17 @@ public class messageController {
         }
         return hexString.toString();
     }
+
+    
+ 
+    
+    @GetMapping("/random")
+    public ResponseEntity<Message17> getRandomMessage() {
+        Message17 message = csvService.getRandomMessage();
+        if (message != null) {
+            return ResponseEntity.ok(message);
+        }
+        return ResponseEntity.notFound().build();
+    }
+
 }
