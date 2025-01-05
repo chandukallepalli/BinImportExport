@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-public class HeartBeatMessage {
+public class PDIVersionCheckSskToPsk {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY) 
@@ -45,24 +45,29 @@ public class HeartBeatMessage {
     @Column(name = "packet_name")
     private String packetName;
 
-    @Column(name = "primary_secondary_s_kavach")
-    private int primarySecondarySKavach;
+    @Column(name = "sender_identifier")
+    private int senderIdentifier;
 
-    @Column(name = "secondary_secondary_s_kavach")
-    private int secondarySecondarySKavach;
+    @Column(name = "receiver_identifier")
+    private int receiverIdentifier;
 
-    @Column(name = "packet_message_length")
-    private int packetMessageLength;
+    @Column(name = "packet_length")
+    private int packetLength;
 
-    @Column(name = "frame_number")
-    private int frameNumber;
+    @Column(name = "result_pdi_version_ckeck")
+    private int resultPdiVersionCheck;
 
-    @Column(name = "packet_message_sequence")
-    private int packetMessageSequence;
+    @Column(name = "pdi_version_ssk")
+    private int pdiVersionSsk;
 
-    @Column(name = "mac_code", length = 255)
+    @Column(name = "rN")
+    private int rN;
+
+    @Column(name = "mac_code")
     private String macCode;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
 }
+

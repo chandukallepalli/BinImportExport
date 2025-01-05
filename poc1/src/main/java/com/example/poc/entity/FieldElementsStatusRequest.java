@@ -6,13 +6,12 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-
 @Getter
 @Setter
-public class HeartBeatMessage {
+public class FieldElementsStatusRequest {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) 
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // Assuming an auto-incrementing primary key
     private Long id;
 
     @Column(name = "message_length")
@@ -41,15 +40,15 @@ public class HeartBeatMessage {
 
     @Column(name = "specific_protocol")
     private String specificProtocol;
-
+   
     @Column(name = "packet_name")
     private String packetName;
 
-    @Column(name = "primary_secondary_s_kavach")
-    private int primarySecondarySKavach;
+    @Column(name = "sender_identifier")
+    private int senderIdentifier;
 
-    @Column(name = "secondary_secondary_s_kavach")
-    private int secondarySecondarySKavach;
+    @Column(name = "receiver_identifier")
+    private int receiverIdentifier;
 
     @Column(name = "packet_message_length")
     private int packetMessageLength;
@@ -60,9 +59,10 @@ public class HeartBeatMessage {
     @Column(name = "packet_message_sequence")
     private int packetMessageSequence;
 
-    @Column(name = "mac_code", length = 255)
+    @Column(name = "mac_code")
     private String macCode;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }
+

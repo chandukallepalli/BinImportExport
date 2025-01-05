@@ -1,81 +1,121 @@
 package com.example.poc.service;
 
-
-import com.example.poc.entity.Message17;
+import com.example.poc.entity.*;
+import com.example.poc.util.AdjecentKavachBatch;
 import com.example.poc.util.CommonFile;
-
 import com.example.poc.util.StationaryHealthInfo;
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import java.text.ParseException;
-
-
-import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
 import jakarta.annotation.PreDestroy;
 import jakarta.transaction.Transactional;
+
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+
 @Service
 public class MessageService {
-
-    private static final int BATCH_SIZE = 15000 ;
+    private static final int BATCH_SIZE = 5000; // Reduced batch size for better throughput
+    private static final int QUEUE_CAPACITY = 10000;
+    private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     
+    // Cache Maps with initial capacity and load factor
     private final ConcurrentHashMap<String, Message17> messageCache;
+    private final ConcurrentHashMap<String, PdiVersionCheckPskToSsk> pdiVersionCheckPskToSsk;
+    private final ConcurrentHashMap<String, PDIVersionCheckSskToPsk> pdiVersionCheckSskToPsk;
+    private final ConcurrentHashMap<String, HeartBeatMessage> heartBeatMessage;
+    private final ConcurrentHashMap<String, TrainHandoverRequest> trainHandoverRequest;
+    private final ConcurrentHashMap<String, TrainTakenOver> trainTakenOver;
+    private final ConcurrentHashMap<String, TrainHandoverCancellation> trainHandoverCancellation;
+    private final ConcurrentHashMap<String, TSLRequest> tslRequest;
+    private final ConcurrentHashMap<String, TrainHandoverCancellationAcknowledgement> trainHandoverCancellationAcknowledgement;
+    private final ConcurrentHashMap<String, FieldElementsStatus> fieldElementsStatus;
+    private final ConcurrentHashMap<String, FieldElementsStatusRequest> fieldElementsStatusRequest;
+    private final ConcurrentHashMap<String, TSLAuthority> tslAuthority;
+    private final ConcurrentHashMap<String, TrainRRi> trainRRi;
+
+    // Message Queues with optimized capacity
     private final BlockingQueue<Message17> messageQueue;
+    private final BlockingQueue<PdiVersionCheckPskToSsk> pdiVersionCheckPskToSskQueue;
+    private final BlockingQueue<PDIVersionCheckSskToPsk> pdiVersionCheckSskToPskQueue;
+    private final BlockingQueue<HeartBeatMessage> heartBeatMessageQueue;
+    private final BlockingQueue<TrainHandoverRequest> trainHandoverRequestQueue;
+    private final BlockingQueue<TrainTakenOver> trainTakenOverQueue;
+    private final BlockingQueue<TrainHandoverCancellation> trainHandoverCancellationQueue;
+    private final BlockingQueue<TSLRequest> tslRequestQueue;
+    private final BlockingQueue<TrainHandoverCancellationAcknowledgement> trainHandoverCancellationAcknowledgementQueue;
+    private final BlockingQueue<FieldElementsStatus> fieldElementsStatusQueue;
+    private final BlockingQueue<FieldElementsStatusRequest> fieldElementsStatusRequestQueue;
+    private final BlockingQueue<TSLAuthority> tslAuthorityQueue;
+    private final BlockingQueue<TrainRRi> trainRRiQueue;
+
     private final ExecutorService processingExecutor;
-    
+
     @Autowired
     private StationaryHealthInfo stationaryHealthInfo;
     
+    @Autowired
+    private AdjecentKavachBatch adjecentKavachBatch;
+
     public MessageService() {
-        this.messageCache = new ConcurrentHashMap<>(); 
-        this.messageQueue = new LinkedBlockingQueue<>(BATCH_SIZE * 2);
-        this.processingExecutor = Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors(),
+        // Initialize ConcurrentHashMaps with initial capacity
+        int initialCapacity = 10000;
+        float loadFactor = 0.75f;
+        
+        this.messageCache = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.pdiVersionCheckPskToSsk = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.pdiVersionCheckSskToPsk = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.heartBeatMessage = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.trainHandoverRequest = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.trainTakenOver = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.trainHandoverCancellation = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.tslRequest = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.trainHandoverCancellationAcknowledgement = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.fieldElementsStatus = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.fieldElementsStatusRequest = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.tslAuthority = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+        this.trainRRi = new ConcurrentHashMap<>(initialCapacity, loadFactor);
+
+        // Initialize BlockingQueues with optimized capacity
+        this.messageQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.pdiVersionCheckPskToSskQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.pdiVersionCheckSskToPskQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.heartBeatMessageQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.trainHandoverRequestQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.trainTakenOverQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.trainHandoverCancellationQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.tslRequestQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.trainHandoverCancellationAcknowledgementQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.fieldElementsStatusQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.fieldElementsStatusRequestQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.tslAuthorityQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.trainRRiQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+
+        // Initialize optimized thread pool
+        this.processingExecutor = new ThreadPoolExecutor(
+            THREAD_POOL_SIZE,
+            THREAD_POOL_SIZE * 2,
+            60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(QUEUE_CAPACITY),
             r -> {
                 Thread t = new Thread(r);
                 t.setPriority(Thread.MAX_PRIORITY);
                 return t;
-            }
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy()
         );
-        startMessageProcessor();
+        
+        startMessageProcessors();
     }
 
-    @Transactional
-    public void decodeHexData(byte[] data) {
-        int offset = 0;
-        while (offset < data.length) {
-            try {
-                
-                offset += 2; 
-                String messageTypeHex = CommonFile.bytesToHex(data, offset, 1);
-                offset += 1;
-                List<Message17> tempBatch = new ArrayList<>();
-                switch (messageTypeHex) {
-                    case "17":
-                        offset = stationaryHealthInfo.decodeMessageType17(data, offset, offset, tempBatch);
-                        for (Message17 message : tempBatch) {
-                            messageQueue.offer(message);
-                        }
-                        break;
-                }
-            } catch (Exception e) {
-                ;
-                offset++;
-            }
-        }
-    }
-
-    private void startMessageProcessor() {
-        int threadCount = Runtime.getRuntime().availableProcessors();
-        for (int i = 0; i < threadCount; i++) {
+    private void startMessageProcessors() {
+        for (int i = 0; i < THREAD_POOL_SIZE; i++) {
             processingExecutor.submit(this::processMessageBatch);
+            processingExecutor.submit(this::processType14MessageBatches);
         }
     }
 
@@ -84,16 +124,13 @@ public class MessageService {
         
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Message17 message = messageQueue.poll(50, TimeUnit.MILLISECONDS);
+                Message17 message = messageQueue.poll(10, TimeUnit.MILLISECONDS);
                 if (message != null) {
                     batch.add(message);
                     messageQueue.drainTo(batch, BATCH_SIZE - batch.size());
                     
                     if (!batch.isEmpty()) {
-                        for (Message17 msg : batch) {
-                            String key = generateKey(msg);
-                            messageCache.put(key, msg);
-                        }
+                        processBatchParallel(batch);
                         batch.clear();
                     }
                 }
@@ -104,100 +141,226 @@ public class MessageService {
         }
     }
 
-    private String generateKey(Message17 message) {
-        return message.getMessageSequence() + "_" + 
-               message.getMessageDate() + "_" + 
-               message.getMessageTime();
-    }
-
-    public List<Message17> getMessagesByDateRange(Date fromDate, Date toDate) {
-        SimpleDateFormat cacheFormat = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
-        List<Message17> result = new ArrayList<>();
-        
-        // logger.info("Current cache size: {}", messageCache.size());
-        // logger.info("Searching between {} and {}", cacheFormat.format(fromDate), cacheFormat.format(toDate));
-        
-        // Debug: Print first few cache entries
-        int debugCount = 0;
-        for (Map.Entry<String, Message17> entry : messageCache.entrySet()) {
-            if (debugCount < 5) {
-                // logger.debug("Cache entry key: {}", entry.getKey());
-                // logger.debug("Cache entry date: {} {}", entry.getValue().getMessageDate(), 
-                //             entry.getValue().getMessageTime());
-                debugCount++;
-            }
-            
-            Message17 message = entry.getValue();
-            try {
-                String messageDateTimeStr = message.getMessageDate() + " " + message.getMessageTime();
-               // logger.debug("Checking message datetime: {}", messageDateTimeStr);
-                
-                // Convert the year format if needed (assuming message date is in yy format)
-                if (message.getMessageDate().length() == 8) { // dd/MM/yy
-                    String[] dateParts = message.getMessageDate().split("/");
-                    if (dateParts.length == 3) {
-                        // Adjust the year if needed
-                        int year = Integer.parseInt(dateParts[2]);
-                        if (year < 50) { // Assuming years 00-49 are 2000-2049
-                            dateParts[2] = String.format("%02d", year);
-                        }
-                        messageDateTimeStr = String.format("%s/%s/%s %s", 
-                            dateParts[0], dateParts[1], dateParts[2], message.getMessageTime());
-                    }
-                }
-                
-                Date messageDateTime = cacheFormat.parse(messageDateTimeStr);
-                
-                if (!messageDateTime.before(fromDate) && !messageDateTime.after(toDate)) {
-                  //  logger.debug("Adding message to result, datetime: {}", messageDateTimeStr);
-                    result.add(message);
-                }
-            } catch (ParseException e) {
-             //   logger.error("Error parsing date for message: {} {}", 
-             //               message.getMessageDate(), message.getMessageTime(), e);
-                continue;
-            }
-        }
-        
-       // logger.info("Found {} messages in date range", result.size());
-        
-        // Sort results by date/time
-        result.sort((m1, m2) -> {
-            try {
-                Date d1 = cacheFormat.parse(m1.getMessageDate() + " " + m1.getMessageTime());
-                Date d2 = cacheFormat.parse(m2.getMessageDate() + " " + m2.getMessageTime());
-                return d1.compareTo(d2);
-            } catch (ParseException e) {
-                //logger.error("Error during sorting", e);
-                return 0;
+    private void processBatchParallel(List<Message17> batch) {
+        batch.parallelStream().forEach(message -> {
+            String key = generateKeyForMessage(message);
+            if (key != null) {
+                messageCache.put(key, message);
             }
         });
-        
-        return result;
     }
-    
 
-    @PreDestroy
-    public void shutdown() {
-        processingExecutor.shutdown();
-        try {
-            if (!processingExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                processingExecutor.shutdownNow();
+    private void processType14MessageBatches() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                processQueueBatchParallel(pdiVersionCheckPskToSskQueue, pdiVersionCheckPskToSsk);
+                processQueueBatchParallel(pdiVersionCheckSskToPskQueue, pdiVersionCheckSskToPsk);
+                processQueueBatchParallel(heartBeatMessageQueue, heartBeatMessage);
+                processQueueBatchParallel(trainHandoverRequestQueue, trainHandoverRequest);
+                processQueueBatchParallel(trainTakenOverQueue, trainTakenOver);
+                processQueueBatchParallel(trainHandoverCancellationQueue, trainHandoverCancellation);
+                processQueueBatchParallel(tslRequestQueue, tslRequest);
+                processQueueBatchParallel(trainHandoverCancellationAcknowledgementQueue, trainHandoverCancellationAcknowledgement);
+                processQueueBatchParallel(fieldElementsStatusQueue, fieldElementsStatus);
+                processQueueBatchParallel(fieldElementsStatusRequestQueue, fieldElementsStatusRequest);
+                processQueueBatchParallel(tslAuthorityQueue, tslAuthority);
+                processQueueBatchParallel(trainRRiQueue, trainRRi);
+                
+                Thread.sleep(10); // Reduced sleep time
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
             }
-        } catch (InterruptedException e) {
-            processingExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
         }
     }
-    public int getCacheSize() {
-        return messageCache.size();
+
+    private <T> void processQueueBatchParallel(BlockingQueue<T> queue, ConcurrentHashMap<String, T> cache) {
+        List<T> batch = new ArrayList<>(BATCH_SIZE);
+        queue.drainTo(batch, BATCH_SIZE);
+        
+        if (!batch.isEmpty()) {
+            batch.parallelStream().forEach(message -> {
+                String key = generateKeyForMessage(message);
+                if (key != null) {
+                    cache.put(key, message);
+                }
+            });
+        }
     }
-    public Message17 getRandomMessage() {
-        if (messageCache.isEmpty()) {
+
+    @Transactional
+    public void decodeHexData(byte[] data) {
+        CompletableFuture.runAsync(() -> {
+            int offset = 0;
+            while (offset < data.length) {
+                try {
+                    offset += 2;
+                    String messageTypeHex = CommonFile.bytesToHex(data, offset, 1);
+                    offset += 1;
+
+                    switch (messageTypeHex) {
+                        case "14":
+                            offset = processType14Message(data, offset);
+                            break;
+                        case "17":
+                            offset = processType17Message(data, offset);
+                            break;
+                        default:
+                            offset++;
+                    }
+                } catch (Exception e) {
+                    offset++;
+                }
+            }
+        }, processingExecutor);
+    }
+
+    private int processType14Message(byte[] data, int offset) throws JsonProcessingException {
+        List<PdiVersionCheckPskToSsk> pdiVersionCheckPskToSskBatch = new ArrayList<>();
+        List<PDIVersionCheckSskToPsk> pdiVersionCheckSskToPskBatch = new ArrayList<>();
+        List<HeartBeatMessage> heartBeatMessageBatch = new ArrayList<>();
+        List<TrainHandoverRequest> trainHandoverRequestBatch = new ArrayList<>();
+        List<TrainTakenOver> trainTakenOverBatch = new ArrayList<>();
+        List<TrainHandoverCancellation> trainHandoverCancellationBatch = new ArrayList<>();
+        List<TSLRequest> tslRequestBatch = new ArrayList<>();
+        List<TrainHandoverCancellationAcknowledgement> trainHandoverCancellationAcknowledgementBatch = new ArrayList<>();
+        List<FieldElementsStatus> fieldElementsStatusBatch = new ArrayList<>();
+        List<FieldElementsStatusRequest> fieldElementsStatusRequestBatch = new ArrayList<>();
+        List<TSLAuthority> tslAuthorityBatch = new ArrayList<>();
+        List<TrainRRi> trainRRiBatch = new ArrayList<>();
+
+        int newOffset = adjecentKavachBatch.decodeMessageType14(data, offset, offset,
+            pdiVersionCheckPskToSskBatch, pdiVersionCheckSskToPskBatch, 
+            heartBeatMessageBatch, trainHandoverRequestBatch,
+            trainTakenOverBatch, trainHandoverCancellationBatch,
+            tslRequestBatch, trainHandoverCancellationAcknowledgementBatch,
+            fieldElementsStatusBatch, fieldElementsStatusRequestBatch,
+            tslAuthorityBatch, trainRRiBatch);
+
+        // Process all batches in parallel
+        CompletableFuture.allOf(
+            CompletableFuture.runAsync(() -> addToQueue(pdiVersionCheckPskToSskBatch, pdiVersionCheckPskToSskQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(pdiVersionCheckSskToPskBatch, pdiVersionCheckSskToPskQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(heartBeatMessageBatch, heartBeatMessageQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(trainHandoverRequestBatch, trainHandoverRequestQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(trainTakenOverBatch, trainTakenOverQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(trainHandoverCancellationBatch, trainHandoverCancellationQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(fieldElementsStatusBatch, fieldElementsStatusQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(fieldElementsStatusRequestBatch, fieldElementsStatusRequestQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(tslAuthorityBatch, tslAuthorityQueue)),
+            CompletableFuture.runAsync(() -> addToQueue(trainRRiBatch, trainRRiQueue))
+        ).join();
+
+        return newOffset;
+    }
+
+    private int processType17Message(byte[] data, int offset) {
+        List<Message17> tempBatch = new ArrayList<>();
+        int newOffset = stationaryHealthInfo.decodeMessageType17(data, offset, offset, tempBatch);
+        addToQueue(tempBatch, messageQueue);
+        return newOffset;
+    }
+
+    private <T> void addToQueue(List<T> batch, BlockingQueue<T> queue) {
+        batch.forEach(message -> {
+            try {
+                if (!queue.offer(message, 100, TimeUnit.MILLISECONDS)) {
+                    // Handle queue full scenario
+                    processSingleMessage(message);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    private <T> void processSingleMessage(T message) {
+        String key = generateKeyForMessage(message);
+        if (key != null) {
+            if (message instanceof Message17) {
+                messageCache.put(key, (Message17) message);
+            } else if (message instanceof PdiVersionCheckPskToSsk) {
+                pdiVersionCheckPskToSsk.put(key, (PdiVersionCheckPskToSsk) message);
+            } else if (message instanceof PDIVersionCheckSskToPsk) {
+                pdiVersionCheckSskToPsk.put(key, (PDIVersionCheckSskToPsk) message);
+            } else if (message instanceof HeartBeatMessage) {
+                heartBeatMessage.put(key, (HeartBeatMessage) message);
+            } else if (message instanceof TrainHandoverRequest) {
+                trainHandoverRequest.put(key, (TrainHandoverRequest) message);
+            } else if (message instanceof TrainTakenOver) {
+                trainTakenOver.put(key, (TrainTakenOver) message);
+            } else if (message instanceof TrainHandoverCancellation) {
+                trainHandoverCancellation.put(key, (TrainHandoverCancellation) message);
+            } else if (message instanceof TSLRequest) {
+                tslRequest.put(key, (TSLRequest) message);
+            } else if (message instanceof TrainHandoverCancellationAcknowledgement) {
+                trainHandoverCancellationAcknowledgement.put(key, (TrainHandoverCancellationAcknowledgement) message);
+            } else if (message instanceof FieldElementsStatus) {
+                fieldElementsStatus.put(key, (FieldElementsStatus) message);
+            } else if (message instanceof FieldElementsStatusRequest) {
+                fieldElementsStatusRequest.put(key, (FieldElementsStatusRequest) message);
+            } else if (message instanceof TSLAuthority) {
+                tslAuthority.put(key, (TSLAuthority) message);
+            } else if (message instanceof TrainRRi) {
+                trainRRi.put(key, (TrainRRi) message);
+            } else {
+                // Handle unsupported message types or log a warning
+                System.err.println("Unsupported message type: " + message.getClass().getName());
+            }
+        }
+    }
+
+    private <T> String generateKeyForMessage(T message) {
+        try {
+            if (message instanceof Message17) {
+                Message17 msg = (Message17) message;
+                return msg.getMessageSequence() + "_" + msg.getMessageDate() + "_" + msg.getMessageTime();
+            } else if (message instanceof PdiVersionCheckPskToSsk) {
+                PdiVersionCheckPskToSsk msg = (PdiVersionCheckPskToSsk) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof PDIVersionCheckSskToPsk) {
+                PDIVersionCheckSskToPsk msg = (PDIVersionCheckSskToPsk) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof HeartBeatMessage) {
+                HeartBeatMessage msg = (HeartBeatMessage) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TrainHandoverRequest) {
+                TrainHandoverRequest msg = (TrainHandoverRequest) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TrainTakenOver) {
+                TrainTakenOver msg = (TrainTakenOver) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TrainHandoverCancellation) {
+                TrainHandoverCancellation msg = (TrainHandoverCancellation) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TSLRequest) {
+                TSLRequest msg = (TSLRequest) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TrainHandoverCancellationAcknowledgement) {
+                TrainHandoverCancellationAcknowledgement msg = (TrainHandoverCancellationAcknowledgement) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof FieldElementsStatus) {
+                FieldElementsStatus msg = (FieldElementsStatus) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof FieldElementsStatusRequest) {
+                FieldElementsStatusRequest msg = (FieldElementsStatusRequest) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TSLAuthority) {
+                TSLAuthority msg = (TSLAuthority) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else if (message instanceof TrainRRi) {
+                TrainRRi msg = (TrainRRi) message;
+                return msg.getDate() + "_" + msg.getTime();
+            } else {
+                // Handle unsupported message types
+                System.err.println("Unsupported message type for key generation: " + message.getClass().getName());
+                return null;
+            }
+        } catch (Exception e) {
+            System.err.println("Error generating key for message: " + e.getMessage());
             return null;
         }
-
-        List<Message17> messages = new ArrayList<>(messageCache.values());
-        return messages.get(new Random().nextInt(messages.size()));
     }
+    
+    
 }
