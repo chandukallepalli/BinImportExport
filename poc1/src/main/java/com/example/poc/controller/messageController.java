@@ -5,16 +5,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.example.poc.dto.Message17Request;
 import com.example.poc.service.MessageService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -100,28 +104,79 @@ public class messageController {
         List<byte[]> messages = new ArrayList<>();
         int currentPosition = 0;
 
-        while (currentPosition < fileBytes.length - MINIMUM_MESSAGE_SIZE) {
+        while (currentPosition < fileBytes.length - 1) {
             int header = ((fileBytes[currentPosition] & 0xFF) << 8) |
-                    (fileBytes[currentPosition + 1] & 0xFF);
+                        (fileBytes[currentPosition + 1] & 0xFF);
 
             if (header == HEADER_VALUE) {
-                int messageType = fileBytes[currentPosition + 2] & 0xFF;
-                int messageLength = ((fileBytes[currentPosition + 3] & 0xFF) << 8) |
-                        (fileBytes[currentPosition + 4] & 0xFF);
+                int messageStartPosition = currentPosition;
 
-                if (messageLength > 0 &&
-                        currentPosition + HEADER_SIZE + MESSAGE_TYPE_SIZE + LENGTH_FIELD_SIZE + messageLength <= fileBytes.length) {
-
-                    int totalMessageSize = HEADER_SIZE + MESSAGE_TYPE_SIZE + LENGTH_FIELD_SIZE + messageLength;
-                    byte[] completeMessage = Arrays.copyOfRange(fileBytes, currentPosition,
-                            currentPosition + totalMessageSize);
-                    messages.add(completeMessage);
-                    currentPosition += totalMessageSize;
+                if (currentPosition + LENGTH_FIELD_SIZE > fileBytes.length) {
+                    currentPosition = messageStartPosition + 1;
                     continue;
                 }
+
+                int messageLength = ((fileBytes[currentPosition + 3] & 0xFF) << 8) |
+                                  (fileBytes[currentPosition + 4] & 0xFF);
+
+                if (messageLength <= 0 || currentPosition + messageLength > fileBytes.length) {
+                    currentPosition = messageStartPosition + 1;
+                    continue;
+                }
+
+                int totalMessageSize = HEADER_SIZE + messageLength;
+                byte[] completeMessage = Arrays.copyOfRange(fileBytes, messageStartPosition, messageStartPosition + totalMessageSize);
+
+                messages.add(completeMessage);
+                currentPosition = currentPosition + messageLength + 2;
+            } else {
+                currentPosition++;
             }
-            currentPosition++;
         }
+
         return messages;
     }
+    @PostMapping("/message17")
+public ResponseEntity<Map<String, Object>> getMessage17(
+        @RequestBody Message17Request request) {
+    try {
+        if (request.getFromDate() == null || request.getToDate() == null) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "From date and to date are required"));
+        }
+
+        if (request.getPage() < 0) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "Page number cannot be negative"));
+        }
+
+        if (request.getPageSize() <= 0) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "Page size must be greater than 0"));
+        }
+        Map<String, Object> result = messageService.getMessagesByDateRangeAndFilters(
+            request.getFromDate(),
+            request.getToDate(),
+            request.getPage(),
+            request.getPageSize(),
+            request.getFilters()
+        );
+
+        return ResponseEntity.ok(result);
+
+    } catch (IllegalArgumentException e) {
+        return ResponseEntity.badRequest()
+            .body(Map.of(
+                "error", e.getMessage(),
+                "status", "BAD_REQUEST"
+            ));
+    } catch (Exception e) {
+        return ResponseEntity.internalServerError()
+            .body(Map.of(
+                "error", "An unexpected error occurred",
+                "status", "INTERNAL_SERVER_ERROR"
+            ));
+    }
+}
+
 }

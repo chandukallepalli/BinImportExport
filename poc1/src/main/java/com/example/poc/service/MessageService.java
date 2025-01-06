@@ -62,10 +62,8 @@ public class MessageService {
     private AdjecentKavachBatch adjecentKavachBatch;
 
     public MessageService() {
-        // Initialize ConcurrentHashMaps with initial capacity
         int initialCapacity = 10000;
         float loadFactor = 0.75f;
-        
         this.messageCache = new ConcurrentHashMap<>(initialCapacity, loadFactor);
         this.pdiVersionCheckPskToSsk = new ConcurrentHashMap<>(initialCapacity, loadFactor);
         this.pdiVersionCheckSskToPsk = new ConcurrentHashMap<>(initialCapacity, loadFactor);
@@ -79,8 +77,6 @@ public class MessageService {
         this.fieldElementsStatusRequest = new ConcurrentHashMap<>(initialCapacity, loadFactor);
         this.tslAuthority = new ConcurrentHashMap<>(initialCapacity, loadFactor);
         this.trainRRi = new ConcurrentHashMap<>(initialCapacity, loadFactor);
-
-        // Initialize BlockingQueues with optimized capacity
         this.messageQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
         this.pdiVersionCheckPskToSskQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
         this.pdiVersionCheckSskToPskQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
@@ -94,8 +90,6 @@ public class MessageService {
         this.fieldElementsStatusRequestQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
         this.tslAuthorityQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
         this.trainRRiQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
-
-        // Initialize optimized thread pool
         this.processingExecutor = new ThreadPoolExecutor(
             THREAD_POOL_SIZE,
             THREAD_POOL_SIZE * 2,
@@ -107,8 +101,7 @@ public class MessageService {
                 return t;
             },
             new ThreadPoolExecutor.CallerRunsPolicy()
-        );
-        
+        );   
         startMessageProcessors();
     }
 
@@ -166,7 +159,7 @@ public class MessageService {
                 processQueueBatchParallel(tslAuthorityQueue, tslAuthority);
                 processQueueBatchParallel(trainRRiQueue, trainRRi);
                 
-                Thread.sleep(10); // Reduced sleep time
+                Thread.sleep(10); 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -214,7 +207,6 @@ public class MessageService {
             }
         }, processingExecutor);
     }
-
     private int processType14Message(byte[] data, int offset) throws JsonProcessingException {
         List<PdiVersionCheckPskToSsk> pdiVersionCheckPskToSskBatch = new ArrayList<>();
         List<PDIVersionCheckSskToPsk> pdiVersionCheckSskToPskBatch = new ArrayList<>();
@@ -224,11 +216,10 @@ public class MessageService {
         List<TrainHandoverCancellation> trainHandoverCancellationBatch = new ArrayList<>();
         List<TSLRequest> tslRequestBatch = new ArrayList<>();
         List<TrainHandoverCancellationAcknowledgement> trainHandoverCancellationAcknowledgementBatch = new ArrayList<>();
-        List<FieldElementsStatus> fieldElementsStatusBatch = new ArrayList<>();
+        List<FieldElementsStatus> fieldElementsStatusBatch = new ArrayList<>(); 
         List<FieldElementsStatusRequest> fieldElementsStatusRequestBatch = new ArrayList<>();
         List<TSLAuthority> tslAuthorityBatch = new ArrayList<>();
         List<TrainRRi> trainRRiBatch = new ArrayList<>();
-
         int newOffset = adjecentKavachBatch.decodeMessageType14(data, offset, offset,
             pdiVersionCheckPskToSskBatch, pdiVersionCheckSskToPskBatch, 
             heartBeatMessageBatch, trainHandoverRequestBatch,
@@ -236,8 +227,6 @@ public class MessageService {
             tslRequestBatch, trainHandoverCancellationAcknowledgementBatch,
             fieldElementsStatusBatch, fieldElementsStatusRequestBatch,
             tslAuthorityBatch, trainRRiBatch);
-
-        // Process all batches in parallel
         CompletableFuture.allOf(
             CompletableFuture.runAsync(() -> addToQueue(pdiVersionCheckPskToSskBatch, pdiVersionCheckPskToSskQueue)),
             CompletableFuture.runAsync(() -> addToQueue(pdiVersionCheckSskToPskBatch, pdiVersionCheckSskToPskQueue)),
@@ -265,7 +254,6 @@ public class MessageService {
         batch.forEach(message -> {
             try {
                 if (!queue.offer(message, 100, TimeUnit.MILLISECONDS)) {
-                    // Handle queue full scenario
                     processSingleMessage(message);
                 }
             } catch (InterruptedException e) {
@@ -304,7 +292,6 @@ public class MessageService {
             } else if (message instanceof TrainRRi) {
                 trainRRi.put(key, (TrainRRi) message);
             } else {
-                // Handle unsupported message types or log a warning
                 System.err.println("Unsupported message type: " + message.getClass().getName());
             }
         }
@@ -352,7 +339,7 @@ public class MessageService {
                 TrainRRi msg = (TrainRRi) message;
                 return msg.getDate() + "_" + msg.getTime();
             } else {
-                // Handle unsupported message types
+                
                 System.err.println("Unsupported message type for key generation: " + message.getClass().getName());
                 return null;
             }
@@ -361,6 +348,77 @@ public class MessageService {
             return null;
         }
     }
+
+    public Map<String, Object> getMessagesByDateRangeAndFilters(String fromDate, String toDate, 
+    int page, int pageSize, Map<String, List<Integer>> filters) {
+    
+    try {
+        
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        Date startDate = dateFormat.parse(fromDate);
+        Date endDate = dateFormat.parse(toDate);
+
+        
+        List<Message17> filteredMessages = messageCache.values().parallelStream()
+            .filter(msg -> {
+                try {
+                    
+                    String msgDateTime = msg.getMessageDate() + " " + msg.getMessageTime();
+                    Date msgDate = dateFormat.parse(msgDateTime);
+                    boolean withinDateRange = !msgDate.before(startDate) && !msgDate.after(endDate);
+                    boolean matchesFilters = true;
+                    if (filters != null) {
+                        if (filters.containsKey("stationaryKavachId") && !filters.get("stationaryKavachId").isEmpty()) {
+                            matchesFilters &= filters.get("stationaryKavachId")
+                                .contains(msg.getStationaryKavachId());
+                        }
+                        if (filters.containsKey("messageLength") && !filters.get("messageLength").isEmpty()) {
+                            matchesFilters &= filters.get("messageLength")
+                                .contains(msg.getMessageLength());
+                        }
+                        if (filters.containsKey("messageSequence") && !filters.get("messageSequence").isEmpty()) {
+                            matchesFilters &= filters.get("messageSequence")
+                                .contains(msg.getMessageSequence());
+                        }
+                    }
+                    
+                    return withinDateRange && matchesFilters;       
+                } catch (ParseException e) {
+                    return false;
+                }
+            })
+            .sorted((m1, m2) -> {
+                try {
+                    Date date1 = dateFormat.parse(m1.getMessageDate() + " " + m1.getMessageTime());
+                    Date date2 = dateFormat.parse(m2.getMessageDate() + " " + m2.getMessageTime());
+                    return date2.compareTo(date1); 
+                } catch (ParseException e) {
+                    return 0;
+                }
+            })
+            .collect(Collectors.toList());
+        int totalElements = filteredMessages.size();
+        int totalPages = (int) Math.ceil((double) totalElements / pageSize);
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, totalElements);
+        List<Message17> paginatedMessages = startIndex < endIndex 
+            ? filteredMessages.subList(startIndex, endIndex)
+            : new ArrayList<>();
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", paginatedMessages);
+        response.put("totalElements", totalElements);
+        response.put("totalPages", totalPages);
+        response.put("currentPage", page);
+        response.put("pageSize", pageSize);
+        response.put("hasNext", page < totalPages - 1);
+        response.put("hasPrevious", page > 0);
+
+        return response;
+        
+    } catch (ParseException e) {
+        throw new IllegalArgumentException("Invalid date format. Expected format: yyyy-MM-dd HH:mm:ss");
+    }
+}
     
     
 }
