@@ -57,6 +57,17 @@ public class MessageService {
     public ConcurrentHashMap<String, HeartBeatMessage> getHeartBeatMessages() {
         return heartBeatMessage;
     }
+    public ConcurrentHashMap<String, PDIVersionCheckSskToPsk> getMessagePdiVerSionCheck() {
+        return pdiVersionCheckSskToPsk;
+    }
+    public ConcurrentHashMap<String, PdiVersionCheckPskToSsk> getCommandPdiVerSionCheck() {
+        return pdiVersionCheckPskToSsk;
+    }
+
+    public ConcurrentHashMap<String, TrainRRi> getTrainRRi() {
+        return trainRRi;
+    }
+
 
     public void addHeartBeatMessage(String key, HeartBeatMessage message) {
         heartBeatMessage.put(key, message);

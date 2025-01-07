@@ -15,7 +15,9 @@ import org.springframework.web.multipart.MultipartFile;
 import com.example.poc.dto.Message17Request;
 import com.example.poc.entity.HeartBeatMessage;
 import com.example.poc.entity.Message17;
+import com.example.poc.entity.TrainRRi;
 import com.example.poc.service.MessageService;
+import com.example.poc.service.TurnoutSpeedService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +32,8 @@ public class messageController {
 
     @Autowired
     private MessageService messageService;
+    @Autowired
+    private TurnoutSpeedService service;
 
     private static final int HEADER_VALUE = 0xAAAA;
     private static final int HEADER_SIZE = 2;
@@ -139,7 +143,7 @@ public class messageController {
         return messages;
     }
     @PostMapping("/message17")
-public ResponseEntity<List<HeartBeatMessage>> getMessage17(
+public ResponseEntity<List<TrainRRi>> getMessage17(
         @RequestBody Message17Request request) {
     // try {
         // if (request.getFromDate() == null || request.getToDate() == null) {
@@ -156,7 +160,7 @@ public ResponseEntity<List<HeartBeatMessage>> getMessage17(
         //     return ResponseEntity.badRequest()
         //         .body(Map.of("error", "Page size must be greater than 0"));
         // }
-        List<HeartBeatMessage> result = messageService.getMessagesByDateRange(
+        List<TrainRRi> result = service.getMessagesByDateRange(
             request.getFromDate(),
             request.getToDate(),
             request.getPage(),
