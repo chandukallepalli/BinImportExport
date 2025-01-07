@@ -61,7 +61,7 @@ public class messageController {
             byte[] fileBytes = file.getBytes();
             logger.info("File size: {} bytes", fileBytes.length);
 
-            List<byte[]> parsedMessages = parseMessages(fileBytes);
+            List<byte[]> parsedMessages = parseMessages(fileBytes);//1
 
             if (parsedMessages.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.OK).body("File uploaded, but no valid messages were found.");
