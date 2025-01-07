@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.example.poc.dto.Message17Request;
+import com.example.poc.entity.HeartBeatMessage;
+import com.example.poc.entity.Message17;
 import com.example.poc.service.MessageService;
 
 import java.util.ArrayList;
@@ -137,46 +139,37 @@ public class messageController {
         return messages;
     }
     @PostMapping("/message17")
-public ResponseEntity<Map<String, Object>> getMessage17(
+public ResponseEntity<List<HeartBeatMessage>> getMessage17(
         @RequestBody Message17Request request) {
-    try {
-        if (request.getFromDate() == null || request.getToDate() == null) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "From date and to date are required"));
-        }
+    // try {
+        // if (request.getFromDate() == null || request.getToDate() == null) {
+        //     return ResponseEntity.badRequest()
+        //         .body(Map.of("error", "From date and to date are required"));
+        // }
 
-        if (request.getPage() < 0) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Page number cannot be negative"));
-        }
+        // if (request.getPage() < 0) {
+        //     return ResponseEntity.badRequest()
+        //         .body(Map.of("error", "Page number cannot be negative"));
+        // }
 
-        if (request.getPageSize() <= 0) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Page size must be greater than 0"));
-        }
-        Map<String, Object> result = messageService.getMessagesByDateRangeAndFilters(
+        // if (request.getPageSize() <= 0) {
+        //     return ResponseEntity.badRequest()
+        //         .body(Map.of("error", "Page size must be greater than 0"));
+        // }
+        List<HeartBeatMessage> result = messageService.getMessagesByDateRange(
             request.getFromDate(),
             request.getToDate(),
             request.getPage(),
-            request.getPageSize(),
-            request.getFilters()
+            request.getPageSize()
+            // request.getFilters()
         );
 
         return ResponseEntity.ok(result);
 
-    } catch (IllegalArgumentException e) {
-        return ResponseEntity.badRequest()
-            .body(Map.of(
-                "error", e.getMessage(),
-                "status", "BAD_REQUEST"
-            ));
-    } catch (Exception e) {
-        return ResponseEntity.internalServerError()
-            .body(Map.of(
-                "error", "An unexpected error occurred",
-                "status", "INTERNAL_SERVER_ERROR"
-            ));
-    }
+    
+    // } catch (Exception e) {
+    //     return e;
+    // }
 }
 
 }
